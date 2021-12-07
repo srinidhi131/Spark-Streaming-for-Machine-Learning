@@ -1,4 +1,11 @@
 import pandas as pd
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import classification_report
+import seaborn as sns
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.pipeline import FeatureUnion
+from sklearn.naive_bayes import MultinomialNB
+# Import socket module
 import socket 
 import json
 import csv
@@ -18,6 +25,8 @@ from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.model_selection import GridSearchCV,train_test_split,StratifiedKFold,cross_val_score,learning_curve
+
+#import sklearn packages for building classifiers
 from sklearn.linear_model import LogisticRegression
 from sklearn.linear_model import Perceptron
 from sklearn.svm import SVC
@@ -71,7 +80,8 @@ def preprocess(data):
 	data = data.replace(['ham','spam'],[0, 1])
 	#remove the punctuations and stopwords
 	import string
-	def text_process(text): 
+	def text_process(text):
+		#text=re.sub('\W+','', text) 
 		text = text.translate(str.maketrans('', '', string.punctuation))
 		text = [word for word in text.split() if word.lower() not in stopwords.words('english')]    
 		return " ".join(text)
@@ -102,9 +112,33 @@ def preprocess(data):
 	word_vectors = np.zeros((len(text), len(vocab)), dtype=np.int_)
 	for i, (_, text_) in enumerate(text.iterrows()):
 		word_vectors[i] = text_to_vector(text_[0])
+	'''vectorizer = TfidfVectorizer()
+	vectors = vectorizer.fit_transform(data['feature1'])
+	vectors.shape'''
 	features=word_vectors
 	X_train, X_test, y_train, y_test = train_test_split(features, data['feature2'], test_size=0.01)
+	#ret=model(features,X_train, y_train,previous_values,batch)
 	return X_train, y_train
+
+def test(p,y_test,clf):
+
+	print("Metrics for",clf,"for a given batch:")
+
+	matrix = confusion_matrix(y_test,p, labels=[1,0])
+	print('Confusion matrix : \n',matrix)
+
+	f , ax = plt.subplots(figsize = (5,5))
+	sns.heatmap(matrix, annot = True,linewidths = 0.5 , linecolor="blue", fmt = ".0f" , ax=ax)
+	plt.xlabel("predictions")
+	plt.ylabel("True Values")
+	plt.show()
+
+	tp, fn, fp, tn = confusion_matrix(y_test,p,labels=[1,0]).reshape(-1)
+	print('Outcome values : \n', tp, fn, fp, tn)
+
+	report = classification_report(y_test,p,labels=[1,0])
+	print('Classification report : \n',report)
+	
 def recieve_data(TCP_IP,TCP_PORT):
 	d=""
 	u=""
@@ -126,32 +160,47 @@ def recieve_data(TCP_IP,TCP_PORT):
 			break
 		temp=d.split("\n",1)
 		u+=temp[0]
+		
 		if len(temp)==2 and test_train>batch:
 			batch+=1
 			var=json.loads(u)
 			fi=list(var.values())
 			df=pd.DataFrame.from_dict(fi)	
 			X_train, y_train=preprocess(df)
-			#print(X_train.shape)
-			
+			i = 0
 			if batch==1:
 				batchsize=df.shape[0]
 				test_train=int(30345/batchsize)
-				#print(batchsize)
 				check=X_train.shape[1]
 			if check>X_train.shape[1]:
 				tempi=np.zeros((X_train.shape[0],check))
 				tempi[:X_train.shape[0],:X_train.shape[1]]=X_train
 				X_train=tempi.astype(int)
-				#print(X_train.shape)
 			if check<X_train.shape[1]:
 				X_train=X_train[:,:check]
 			for k,clf in clfs.items():
 				#print(X_train.shape)
-				clf.partial_fit(X_train, y_train,classes=np.unique(y_train))
+				p=clf.partial_fit(X_train, y_train,classes=np.unique(y_train))
+
 			u=temp[1]
-		
+		elif len(temp)==2 and test_train<=batch:
+			var=json.loads(u)
+			fi=list(var.values())
+			df=pd.DataFrame.from_dict(fi)	
+			X_test, y_test=preprocess(df)
+			if check>X_test.shape[1]:
+				tempo=np.zeros((X_test.shape[0],check))
+				tempo[:X_test.shape[0],:X_test.shape[1]]=X_test
+				X_test=tempo.astype(int)
+			if check<X_test.shape[1]:
+				X_test=X_test[:,:check]
+			pred_scores_word_vectors = []
+			for k,clf in clfs.items():
+				p=clf.predict(X_test)
+				test(p,y_test,clf)
+			u=temp[1]
+
 			
 	s.close()
-	#     return
+
 recieve_data(TCP_IP,TCP_PORT)
