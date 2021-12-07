@@ -40,6 +40,12 @@ from sklearn.ensemble import BaggingClassifier
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.metrics import accuracy_score
 
+#clustering modules
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.cluster import KMeans
+sno = nltk.stem.SnowballStemmer('english')
+from sklearn.cluster import MiniBatchKMeans
+
 TCP_IP = "localhost"
 TCP_PORT = 6100
 s = socket.socket()   
@@ -118,7 +124,7 @@ def preprocess(data):
 	features=word_vectors
 	X_train, X_test, y_train, y_test = train_test_split(features, data['feature2'], test_size=0.01)
 	#ret=model(features,X_train, y_train,previous_values,batch)
-	return X_train, y_train
+	return X_train, y_train,text
 
 def test(p,y_test,clf):
 
@@ -138,6 +144,57 @@ def test(p,y_test,clf):
 
 	report = classification_report(y_test,p,labels=[1,0])
 	print('Classification report : \n',report)
+
+def cluster(data_set,df):
+	pd=data_set
+	df=df.dropna()
+	# print(pd)
+	# print("---------------------------------------------------------------------------")
+	# print(df)
+	ad=pd.feature1
+	# print(len(ad))
+	i=0
+	str1=""
+	spam_w=[]
+	ham_w=[]
+	str2=""
+	final=[]
+	for j in pd["feature1"]:
+		new=[]
+		for w in j.split():
+			
+			str2=(sno.stem(w.lower())).encode('utf8')
+			new.append(str2)
+			if (df["feature2"].values)[i] == "spam":
+				spam_w.append(str2)
+			if (df["feature2"].values)[i] == "ham":
+				ham_w.append(str2)
+		str1=b" ".join(new)
+		final.append(str1)
+		i+=1	
+	# print(final)
+	# print(len(final))
+	
+	df['CleanedText'] = final
+	df['CleanedText'] = df['CleanedText'].str.decode("utf-8")
+	# print(df['CleanedText'])
+	count_vect = CountVectorizer()
+	bow = count_vect.fit_transform(df['CleanedText'].values)
+	terms = count_vect.get_feature_names()
+	model1 = MiniBatchKMeans(n_clusters=2,random_state=99,batch_size=3000)
+	model1=model1.partial_fit(bow)
+	labels = model1.labels_
+	cluster_center=model1.cluster_centers_
+	df['Bow Clus Label'] = model1.labels_
+	df["new"]=pd["feature1"]
+	print(df.groupby(['Bow Clus Label'])["new"].count())
+	fig = plt.figure(figsize = (10, 5))
+	data=["0","1"]
+	plt.bar(data, df.groupby(['Bow Clus Label'])['new'].count(),width=0.3)
+	plt.title('KMeans cluster points')
+	plt.xlabel("Cluster number")
+	plt.ylabel("Number of points")
+	plt.show()
 	
 def recieve_data(TCP_IP,TCP_PORT):
 	d=""
@@ -166,7 +223,7 @@ def recieve_data(TCP_IP,TCP_PORT):
 			var=json.loads(u)
 			fi=list(var.values())
 			df=pd.DataFrame.from_dict(fi)	
-			X_train, y_train=preprocess(df)
+			X_train, y_train,text=preprocess(df)
 			i = 0
 			if batch==1:
 				batchsize=df.shape[0]
@@ -187,7 +244,7 @@ def recieve_data(TCP_IP,TCP_PORT):
 			var=json.loads(u)
 			fi=list(var.values())
 			df=pd.DataFrame.from_dict(fi)	
-			X_test, y_test=preprocess(df)
+			X_test, y_test,text=preprocess(df)
 			if check>X_test.shape[1]:
 				tempo=np.zeros((X_test.shape[0],check))
 				tempo[:X_test.shape[0],:X_test.shape[1]]=X_test
@@ -198,7 +255,9 @@ def recieve_data(TCP_IP,TCP_PORT):
 			for k,clf in clfs.items():
 				p=clf.predict(X_test)
 				test(p,y_test,clf)
+				cluster(text,df)
 			u=temp[1]
+			
 
 			
 	s.close()
